@@ -1,0 +1,100 @@
+# Loop-OPF
+
+**Solver-informed learning for optimal power flow with inference-time topology adaptivity.**
+
+Loop-OPF is a neural model for DC optimal power flow (DC-OPF) whose layer *is* one iteration of the
+primal–dual hybrid gradient (PDHG) method. Applying the same layer in a loop drives the output to a fixed
+point, and that fixed point is an optimal OPF solution. Learning only changes the PDHG step sizes, so it changes
+how fast the model converges, not what it converges to.
+
+- **Guaranteed optimality at convergence.** For convex OPF problems, the fixed point satisfies the KKT conditions.
+- **Topology adaptivity at inference.** A line or generator outage only changes the problem data that the layer
+  reads. A trained model handles a new outage without retraining.
+- **Memory-efficient training.** The model is trained as a deep equilibrium (DEQ) model. Gradients come from
+  implicit differentiation at the fixed point, so training memory does not grow with the number of iterations.
+- **Anytime inference.** More iterations give a better dispatch, with no retraining.
+
+> This is research code, released alongside the paper. It was run on NVIDIA GH200 nodes of the
+> TACC Vista supercomputer through SLURM. It works, but it is not yet packaged or optimized.
+
+## Repository layout
+
+Folder names follow the study folders used for the paper.
+
+| Folder | What it contains | Paper |
+|---|---|---|
+| `fair4net_l1_study/` | Dataset generation (DC-OPF labels with pandapower; samples with no outage, one line outage, or one generator outage), the Loop-OPF trainer (`deq_trainer_fair4net.py`), the shared evaluation harness, the GNN/MLP baselines, fixed-K rollouts and inference timing | Sec. III–IV, V-A, Fig. 4 |
+| `clean_table3_v1/` | Builds the outage-free subset of each dataset and trains Loop-OPF on it | Table III |
+| `literature_baseline_rebuild/` | DeepOPF, DeepLDE and PDL, adapted to DC-OPF | Table III |
+| `dc3_strict_parity_v2/` | DC3 through the authors' training engine with a DC-OPF adapter | Table III |
+| `topology_conditioned_opf_v1/` | Topology-conditioned baselines (admittance-conditioned dense network, dynamic GNN) | Table IV |
+| `phase_a_scopf_ieee300_full_v1/` | Preventive security-constrained OPF on IEEE 300: Loop-OPF, a supervised DeepOPF and a constraint-driven baseline | Fig. 2 |
+| `fixed_k_pow2_v1/`, `pdhg_step_inference_v1/` | Trained versus initial step sizes at a fixed number of iterations; fixed-K sweeps | Figs. 3–4 |
+| `rel_violation_v1/` | Normalized metrics (RMSE as % of average generator output, flow overload as % of line rating), including the outage-free GNN run | Tables III–IV |
+
+Each folder has `.slurm` files with the exact commands and settings used for the paper.
+
+## Setup
+
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+```
+
+We used Python 3.9 with PyTorch 2.6 (CUDA 12.6). For the DC3 baseline, clone the authors' code into
+`dc3_strict_parity_v2/vendor/DC3`:
+
+```bash
+git clone https://github.com/locuslab/DC3 dc3_strict_parity_v2/vendor/DC3
+```
+
+**Paths.** The scripts were written for one cluster account. Absolute paths appear as `/path/to/workdir`,
+and the SLURM allocation as `YOUR_ALLOCATION`. Replace both before running.
+
+## Quick start
+
+The network is selected with the `DEQ_CASE` environment variable: `case300`, `case1354pegase`,
+`case2869pegase` or `case9241pegase`.
+
+**1. Generate a dataset** (10,000 samples, each with no outage, one line outage or one generator outage):
+
+```bash
+export DEQ_CASE=case300
+python fair4net_l1_study/make_mixed_contingency_dataset.py \
+    --out data/case300_mixed.npz --meta data/case300_mixed_meta.json --N 10000 --seed 0 \
+    --n-line-candidates 32 --n-gen-candidates 32 --p-clean 0.25 --p-line 0.375 --p-gen 0.375 \
+    --ensure-candidate-coverage
+python fair4net_l1_study/audit_mixed_contingency_dataset.py \
+    --data data/case300_mixed.npz --meta data/case300_mixed_meta.json --out data/case300_audit.json \
+    --expected-N 10000 --require-candidate-coverage
+```
+
+**2. Train Loop-OPF** (learned scalar step sizes, 30 epochs):
+
+```bash
+python fair4net_l1_study/deq_trainer_fair4net.py \
+    --data data/case300_mixed.npz --epochs 30 --lr 1e-4 --device cuda \
+    --step_mode scalar --seed_split 0 --picard_iters 50 --anderson_m 4 \
+    --w_cost 1 --w_bal 1e5 --w_flow 1e8 --w_flow_l1 1e4 --out_dir runs/case300
+```
+
+See `fair4net_l1_study/fair4net_mixed_deq.slurm` and `clean_table3_v1/deq_clean.slurm` for the full flag
+sets used in the paper.
+
+**3. Baselines and evaluation.** Use `fair4net_l1_study/baselines_fair4net.py` (GNN, MLP and others),
+`literature_baseline_rebuild/run_literature_baselines.py` (DeepOPF, DeepLDE, PDL),
+`dc3_strict_parity_v2/run_fair4net.py` (DC3) and `topology_conditioned_opf_v1/train.py` (Table IV).
+`rel_violation_v1/` re-scores saved models with the normalized metrics.
+
+## Data
+
+The networks are the IEEE 300-bus case and the PEGASE 1354-, 2869- and 9241-bus cases from MATPOWER /
+PGLib-OPF. Datasets are generated by the scripts above and are not included in this repository.
+
+## Citation
+
+The paper is under review. A citation will be added here.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

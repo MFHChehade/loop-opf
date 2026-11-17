@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# data, checkpoints, results and logs are not tracked
+data/
+runs/
+io/
+logs/
+results/
+*.npz
+*.npy
+*.pt
+*.pth
+*.out
+*.err
+
+# third-party code cloned locally
+dc3_strict_parity_v2/vendor/
