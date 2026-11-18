@@ -2,7 +2,7 @@
 
 **Solver-informed learning for optimal power flow with inference-time topology adaptivity.**
 
-Loop-OPF is a neural model for DC optimal power flow (DC-OPF) whose layer *is* one iteration of the
+Loop-OPF is a neural model for optimal power flow (OPF) whose layer *is* one iteration of the
 primal–dual hybrid gradient (PDHG) method. Applying the same layer in a loop drives the output to a fixed
 point, and that fixed point is an optimal OPF solution. Learning only changes the PDHG step sizes, so it changes
 how fast the model converges, not what it converges to.
